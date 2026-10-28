@@ -1,0 +1,10 @@
+name: 작업
+description: 설정, 문서, 리팩터링 등 기능이 아닌 작업
+title: "[작업] "
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 할 일
+    validations:
+      required: true

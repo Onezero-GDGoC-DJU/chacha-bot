@@ -1,0 +1,36 @@
+name: 버그
+description: 잘못 동작하는 것을 알려요
+title: "[버그] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      options:
+        - frontend
+        - backend
+        - design
+        - 기타
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 방법
+      placeholder: |
+        1. 메시지를 보낸다
+        2. 응답 중 새로고침한다
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 결과 / 실제 결과
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 환경
+      placeholder: 예) Chrome 130, Windows 11

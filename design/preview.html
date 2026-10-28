@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI Chat – CSS Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="components.css">
+  <style>
+    /* 미리보기 전용: URL 해시(#empty, #loading, #conversation, #waiting, #streaming, #error)로 상태 전환 */
+    [data-show]:not(.is-visible) { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="chat-app">
+    <header class="chat-header">
+      <h1 class="chat-header__title">Chat</h1>
+    </header>
+
+    <main class="chat-body" id="body">
+      <div class="chat-thread" role="log" aria-live="polite" aria-label="대화">
+        <div class="empty-state" data-show="empty">
+          <h2 class="empty-state__title">무엇이든 물어보세요</h2>
+          <p class="empty-state__description">일상 속 당연한 것들에 숨은 기술을 함께 파헤쳐 봐요.</p>
+        </div>
+
+        <div class="skeleton" data-show="loading" aria-hidden="true">
+          <div class="skeleton__bubble"></div>
+          <div class="skeleton__lines"><div class="skeleton__line"></div><div class="skeleton__line"></div><div class="skeleton__line"></div></div>
+        </div>
+        <div class="skeleton" data-show="loading" aria-hidden="true">
+          <div class="skeleton__bubble"></div>
+          <div class="skeleton__lines"><div class="skeleton__line"></div><div class="skeleton__line"></div><div class="skeleton__line"></div></div>
+        </div>
+
+        <div class="time-divider" data-show="conversation waiting streaming error">오늘 오후 2:48</div>
+
+        <div class="msg-user" data-show="conversation waiting streaming error">
+          <div class="msg-user__bubble">엘리베이터는 왜 내가 누른 층으로 바로 오지 않을까?</div>
+        </div>
+
+        <div class="msg-ai" data-show="conversation waiting streaming error">
+          <p>엘리베이터는 <strong>요청이 들어온 순서대로</strong> 움직이지 않아요. 여러 층의 요청을 한꺼번에 보고 전체 이동 거리를 줄이는 <strong>스케줄링 알고리즘</strong>을 쓰기 때문이에요.</p>
+          <h3>대표적인 방식</h3>
+          <ol>
+            <li><strong>FCFS</strong>: 들어온 순서대로 처리해요. 단순하지만 위아래로 오가는 거리가 길어져요.</li>
+            <li><strong>SCAN</strong>: 한 방향으로 끝까지 가면서 요청을 처리하고, 끝에 닿으면 방향을 바꿔요.</li>
+            <li><strong>LOOK</strong>: SCAN과 같지만, 그 방향에 더 이상 요청이 없으면 바로 돌아와요.</li>
+          </ol>
+          <p>이 알고리즘은 운영체제의 <strong>디스크 스케줄링</strong>에서도 똑같이 쓰여요. 디스크 헤드를 엘리베이터, 읽을 위치를 층이라고 보면 돼요.</p>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>python</span>
+              <button class="code-block__copy" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>
+                복사
+              </button>
+            </div>
+<pre><code>def look(requests, head):
+    up = sorted(r for r in requests if r &gt;= head)
+    down = sorted((r for r in requests if r &lt; head), reverse=True)
+    return up + down
+
+print(look([2, 9, 4, 7, 1], head=5))  # [7, 9, 4, 2, 1]</code></pre>
+          </div>
+          <p>현재 5층에서 위로 가는 중이라면 7층, 9층을 먼저 들른 뒤 내려오면서 4층, 2층, 1층 순서로 처리해요.</p>
+        </div>
+
+        <div class="msg-user" data-show="waiting streaming error">
+          <div class="msg-user__bubble">그럼 OS의 CPU 스케줄러랑도 비슷한 거야?</div>
+        </div>
+
+        <div class="typing-indicator" data-show="waiting" aria-label="답변 생성 중"><span></span><span></span><span></span></div>
+
+        <div class="msg-ai msg-ai--streaming" data-show="streaming" aria-busy="true">
+          <p>비슷한 부분이 많아요. 둘 다 <strong>한정된 자원(엘리베이터, CPU)</strong>을 여러 요청이 나눠 써야 하는 문제라서, "누구를 먼저 처리할까"를 정하는 규칙이 핵심이에요.</p>
+          <p>다만 CPU 스케줄러는 이동 거리 대신 대기 시간과 응답성을 기준으로</p>
+        </div>
+
+        <div class="msg-error" role="alert" data-show="error">
+          <svg class="msg-error__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.25" fill="currentColor"/></svg>
+          <p class="msg-error__text">답변을 받지 못했어요. 네트워크 상태를 확인하고 다시 시도해 주세요.</p>
+          <button class="btn-retry" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+            다시 시도
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="chat-footer">
+      <form class="composer" onsubmit="return false">
+        <label class="sr-only" for="input">메시지</label>
+        <textarea class="composer__input" id="input" rows="1" placeholder="메시지를 입력하세요"></textarea>
+        <button class="send-button" id="send" type="submit" aria-label="보내기" disabled>
+          <svg id="icon-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          <svg id="icon-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+        </button>
+      </form>
+      <p class="chat-footer__disclaimer">AI는 실수할 수 있어요. 중요한 내용은 한 번 더 확인하세요.</p>
+    </footer>
+  </div>
+
+  <script>
+    const body = document.getElementById('body');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+    const iconSend = document.getElementById('icon-send');
+    const iconStop = document.getElementById('icon-stop');
+
+    function render() {
+      const state = location.hash.slice(1) || 'conversation';
+      document.querySelectorAll('[data-show]').forEach(el => {
+        el.classList.toggle('is-visible', el.dataset.show.split(' ').includes(state));
+      });
+      body.className = 'chat-body' + (state === 'empty' ? ' chat-body--center' : state === 'loading' ? ' chat-body--top' : '');
+      const responding = state === 'waiting' || state === 'streaming';
+      iconSend.hidden = responding;
+      iconStop.hidden = !responding;
+      send.setAttribute('aria-label', responding ? '응답 중지' : '보내기');
+      send.disabled = !responding && input.value.trim() === '';
+      body.scrollTop = body.scrollHeight;
+    }
+
+    input.addEventListener('input', render);
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+name: 기능
+description: 새 기능이나 개선을 제안해요
+title: "[기능] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      options:
+        - frontend
+        - backend
+        - design
+        - 기타
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 하려는 것
+      description: 무엇을, 왜 하려는지 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건
+      placeholder: |
+        - [ ] 입력창에서 Enter로 전송된다
+        - [ ] 한글 조합 중 Enter는 무시된다

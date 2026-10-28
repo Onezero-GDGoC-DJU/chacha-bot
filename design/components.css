@@ -1,0 +1,510 @@
+/*
+ * Component styles — AI Chat (Dark)
+ * tokens.css 다음에 불러올 것. 프레임워크 없이 클래스만으로 동작하는 기준 스타일.
+ * 각 블록 머리말의 [Figma: ...] 는 Components 페이지의 컴포넌트 이름.
+ */
+
+/* ── Base ─────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;      /* 한글 단어 중간에서 줄바꿈하지 않음 */
+  overflow-wrap: anywhere;   /* 단, 긴 URL 등은 넘치지 않게 끊음 */
+}
+
+/* ── App shell ────────────────────────────────────────── */
+.chat-app {
+  display: grid;
+  grid-template-rows: var(--header-height) minmax(0, 1fr) auto;
+  height: 100dvh;
+}
+
+/* [Figma: Header] */
+.chat-header {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--page-gutter);
+  background: var(--color-bg-base);
+}
+
+.chat-header__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  line-height: var(--line-height-title);
+  font-weight: var(--font-weight-medium);
+}
+
+/* 스크롤 영역. 메시지가 적을 땐 스레드를 아래쪽에 붙인다. */
+.chat-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-6) var(--page-gutter);
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-thread {
+  width: 100%;
+  max-width: var(--size-content-max);
+  margin: auto auto 0;       /* 위쪽 auto → 아래 정렬 */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.chat-body--center .chat-thread {
+  margin: auto;              /* 빈 상태: 세로 가운데 */
+}
+
+.chat-body--top .chat-thread {
+  margin: 0 auto auto;       /* 이력 로딩: 위쪽부터 */
+  gap: var(--space-8);
+}
+
+/* [Figma: TimeDivider] */
+.time-divider {
+  padding: var(--space-2) 0;
+  text-align: center;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+}
+
+/* [Figma: EmptyState] */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.empty-state__title {
+  margin: 0;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-bold);
+}
+
+.empty-state__description {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+/* ── Messages ─────────────────────────────────────────── */
+
+/* [Figma: Message/User] */
+.msg-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.msg-user__bubble {
+  max-width: var(--bubble-max);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-user-bubble);
+  color: var(--color-text-on-bubble);
+  line-height: var(--line-height-bubble);
+  white-space: pre-wrap;     /* 사용자가 넣은 줄바꿈 유지 */
+}
+
+/* [Figma: Message/AI = MD/* 블록 묶음] 마크다운 렌더 결과를 감싸는 컨테이너 */
+.msg-ai {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);       /* 블록(문단·목록·코드) 사이 간격 */
+}
+
+.msg-ai > * {
+  margin: 0;
+}
+
+/* [Figma: MD/Heading] */
+.msg-ai h1,
+.msg-ai h2,
+.msg-ai h3 {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-title);
+  line-height: var(--line-height-title);
+  font-weight: var(--font-weight-bold);
+}
+
+.msg-ai strong {
+  font-weight: var(--font-weight-bold);
+}
+
+.msg-ai a {
+  color: var(--color-text-link);
+  text-underline-offset: 3px;
+}
+
+/* [Figma: MD/List Item] */
+.msg-ai ul,
+.msg-ai ol {
+  padding-left: 28px;        /* Marker 20 + gap 8 */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.msg-ai li::marker {
+  color: var(--color-text-secondary);
+}
+
+.msg-ai li > ul,
+.msg-ai li > ol {
+  margin-top: var(--space-2);
+}
+
+.msg-ai :not(pre) > code {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface-raised);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.msg-ai blockquote {
+  padding-left: var(--space-4);
+  border-left: 3px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+}
+
+.msg-ai hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.msg-ai table {
+  border-collapse: collapse;
+  font-size: 15px;
+  display: block;
+  overflow-x: auto;
+}
+
+.msg-ai th,
+.msg-ai td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  text-align: left;
+}
+
+.msg-ai th {
+  background: var(--color-bg-surface);
+  font-weight: var(--font-weight-bold);
+}
+
+/* [Figma: MD/Code Block] */
+.code-block {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  overflow: hidden;
+}
+
+.code-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-bg-surface-raised);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+}
+
+.code-block__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.code-block__copy:hover {
+  color: var(--color-text-primary);
+}
+
+.code-block__copy svg {
+  width: 14px;
+  height: 14px;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;          /* 줄바꿈 대신 가로 스크롤 */
+  font-family: var(--font-mono);
+  font-size: var(--font-size-code);
+  line-height: var(--line-height-code);
+  font-variant-ligatures: none;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* 스트리밍 중: 마지막 블록 끝에 커서 표시. 완료되면 클래스 제거 */
+.msg-ai--streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-text-secondary);
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+/* [Figma: TypingIndicator] 첫 토큰 도착 전 */
+.typing-indicator {
+  display: flex;
+  gap: 6px;
+  padding: var(--space-2) 0;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-icon-secondary);
+  animation: typing-dot 1.2s var(--ease-standard) infinite;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing-dot {
+  0%, 100% { opacity: 0.3; }
+  30% { opacity: 1; }
+}
+
+/* [Figma: Message/Error] */
+.msg-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-danger);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-danger-subtle);
+  line-height: var(--line-height-bubble);
+}
+
+.msg-error__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--color-icon-danger);
+}
+
+.msg-error__text {
+  flex: 1;
+  margin: 0;
+}
+
+.btn-retry {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 6px var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.btn-retry:hover {
+  background: var(--color-bg-surface-raised);
+}
+
+.btn-retry svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* [Figma: Skeleton/Message] */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton__bubble {
+  align-self: flex-end;
+  width: 42%;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface-raised);
+}
+
+.skeleton__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skeleton__line {
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface-raised);
+}
+
+.skeleton__line:nth-child(2) { width: 91%; }
+.skeleton__line:nth-child(3) { width: 60%; }
+
+@keyframes skeleton-pulse {
+  50% { opacity: 0.5; }
+}
+
+/* ── Footer / Composer ────────────────────────────────── */
+.chat-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--page-gutter) max(var(--space-3), env(safe-area-inset-bottom));
+  background: var(--color-bg-base);
+}
+
+/* [Figma: Composer] State=Empty/Typing/Multiline/Responding */
+.composer {
+  width: 100%;
+  max-width: var(--size-content-max);
+  display: flex;
+  align-items: flex-end;     /* 여러 줄일 때 버튼은 아래에 고정 */
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-surface);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.composer:focus-within {
+  border-color: var(--color-border-strong);
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  max-height: var(--composer-max-height);
+  margin: 5px 0;             /* 26px 한 줄 + 10 = 버튼 36px과 세로 가운데 */
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  line-height: var(--line-height-body);
+  field-sizing: content;     /* 지원 브라우저는 자동 높이, 아니면 JS로 높이 조절 */
+}
+
+.composer__input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* [Figma: SendButton] State=Disabled/Active/Stop */
+.send-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--size-icon-button);
+  height: var(--size-icon-button);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-accent);
+  color: var(--color-icon-on-accent);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--blue-400);
+}
+
+.send-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.send-button:disabled {
+  background: var(--color-bg-disabled);
+  color: var(--color-icon-disabled);
+  cursor: default;
+}
+
+.send-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.chat-footer__disclaimer {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* ── Accessibility ────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-bg-accent);
+  outline-offset: 2px;
+}
+
+.composer__input:focus-visible {
+  outline: 0;                /* 포커스 표시는 .composer 테두리가 담당 */
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
