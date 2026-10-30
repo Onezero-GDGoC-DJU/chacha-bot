@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.api.health import router as health_router
+from app.api.sessions import router as sessions_router
+from app.db.database import init_db
 
 # 로깅 기본 설정
 logging.basicConfig(
@@ -53,6 +55,10 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"시스템 프롬프트 로드 완료: {prompt_path} ({len(content)}자)")
 
+    # [명세서 B5 완료 조건]
+    # 서버 시작 시 messages 테이블이 없으면 생성
+    await init_db()
+
     yield  # 애플리케이션 가동
 
     logger.info("=== chacha-bot 백엔드 서버를 종료합니다 ===")
@@ -73,6 +79,7 @@ app = FastAPI(
 # 명세서 4장: 모든 API 경로는 '/api'로 시작합니다.
 # ------------------------------------------------------------------------------
 app.include_router(health_router, prefix="/api", tags=["Health"])
+app.include_router(sessions_router, prefix="/api", tags=["Sessions"])
 
 
 @app.get("/", include_in_schema=False)
