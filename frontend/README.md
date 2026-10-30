@@ -9,4 +9,4 @@ Vite + React로 만든 chacha 채팅 화면입니다.
 ```powershell
 cd frontend
 npm install
-npm run dev
+npm run dev ```
