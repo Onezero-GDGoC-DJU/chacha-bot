@@ -155,4 +155,6 @@ pytest
 **테스트 항목:**
 - `test_health_check_returns_200`: `GET /api/health` 호출 시 HTTP 200 및 `{"status": "ok"}` 반환 여부 검증 (명세서 B8 완료 조건)
 - `test_root_endpoint`: 루트 경로 메타데이터 반환 검증
+- `test_lifespan_fails_when_system_prompt_missing`: 시스템 프롬프트 부재 시 서버 구동 실패 검증 (명세서 B3)
+- `test_lifespan_fails_when_system_prompt_empty`: 시스템 프롬프트 내용 공백 시 서버 구동 실패 검증 (명세서 B3)
 

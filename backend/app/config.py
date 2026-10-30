@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     # Google AI Studio에서 발급받은 Gemini API 키 (운영 시 필수, 절대 커밋 금지)
     gemini_api_key: Optional[str] = None
     
-    # 사용할 Gemini 모델명 (예: gemini-1.5-flash, gemini-1.5-pro)
-    gemini_model: str = "gemini-1.5-flash"
+    # 사용할 Gemini 모델명 (명세서 7장 필수값)
+    # 기본값을 두지 않고 필수로 설정하여 누락 시 서버 시작 시 오류가 발생하도록 설정
+    gemini_model: str
 
     # --------------------------------------------------------------------------
     # 2. 대화 및 맥락(Context) 설정 (명세서 7장)

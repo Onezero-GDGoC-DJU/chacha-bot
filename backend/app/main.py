@@ -42,16 +42,16 @@ async def lifespan(app: FastAPI):
     logger.info(f"최대 메시지 글자 수: {settings.max_message_chars}자")
 
     # [명세서 B3 규칙 사전 점검]
-    # 시스템 프롬프트 파일이 없거나 비어 있으면 서버 시작 실패 처리
+    # 시스템 프롬프트 파일이 없거나 비어 있으면 서버 시작 실패 처리 (명세서 B3: 서버가 시작하지 않아야 함)
     prompt_path = settings.system_prompt_path
     if not prompt_path.exists():
-        logger.error(f"[경고] 시스템 프롬프트 파일을 찾을 수 없습니다: {prompt_path}")
-    else:
-        content = prompt_path.read_text(encoding="utf-8").strip()
-        if not content:
-            logger.error(f"[경고] 시스템 프롬프트 파일 내용이 비어 있습니다: {prompt_path}")
-        else:
-            logger.info(f"시스템 프롬프트 로드 완료: {prompt_path} ({len(content)}자)")
+        raise RuntimeError(f"시스템 프롬프트 파일을 찾을 수 없습니다: {prompt_path}")
+
+    content = prompt_path.read_text(encoding="utf-8").strip()
+    if not content:
+        raise RuntimeError(f"시스템 프롬프트 파일이 비어 있습니다: {prompt_path}")
+
+    logger.info(f"시스템 프롬프트 로드 완료: {prompt_path} ({len(content)}자)")
 
     yield  # 애플리케이션 가동
 
