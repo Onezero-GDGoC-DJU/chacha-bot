@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Python 캐시 및 가상환경
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# 환경변수 파일 (보안: 컨테이너 이미지에 비밀값이 구워지지 않도록 제외)
+.env
+.env.*
+!.env.example
+
+# 테스트 및 커버리지
+.pytest_cache/
+coverage/
+*.log
+
+# 로컬 SQLite DB 파일
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE 및 OS 설정 파일
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
