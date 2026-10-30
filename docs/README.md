@@ -19,3 +19,4 @@
 | 2026-10-29 | IP별 속도 제한은 nginx `limit_req`로 | 백엔드 언어와 상관없이 같은 설정을 씀 |
 | 2026-10-29 | 챗봇 이름은 chacha | PR #4 리뷰 |
 | 2026-10-29 | 시스템 프롬프트는 `backend/prompts/system.md` 파일로 관리하고 PR로만 바꿈 | 챗봇 품질을 가장 크게 좌우하므로 리뷰와 이력이 필요함 |
+| 2026-10-30 | 백엔드 프레임워크로 Python FastAPI 선정 | Gemini API 공식 Python SDK와의 호환성, Pydantic 기반 입력 검증의 용이성, 비동기 SSE 스트리밍 지원 우수 |
