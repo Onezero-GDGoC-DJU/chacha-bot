@@ -2,7 +2,7 @@
 헬스 체크 API 및 서버 시작 검증 테스트 (test_health.py)
 
 명세서 B8 규격 검증:
-1. GET /api/health 요청 시 HTTP 상태 코드 200 반환 (DB 헬스체크 통과 포함)
+1. GET /api/health 요청 시 HTTP 상태 코드 200 반환 (DB 헬스체크 정상 통과)
 2. 응답 JSON 본문이 {"status": "ok"}인지 확인
 3. 루트(/) 엔드포인트 메타데이터 응답 확인
 
