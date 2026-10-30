@@ -157,4 +157,3 @@ pytest
 - `test_root_endpoint`: 루트 경로 메타데이터 반환 검증
 - `test_lifespan_fails_when_system_prompt_missing`: 시스템 프롬프트 부재 시 서버 구동 실패 검증 (명세서 B3)
 - `test_lifespan_fails_when_system_prompt_empty`: 시스템 프롬프트 내용 공백 시 서버 구동 실패 검증 (명세서 B3)
-
