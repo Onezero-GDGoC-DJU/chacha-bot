@@ -11,7 +11,7 @@ chacha-bot의 API 서버입니다. Python **FastAPI**와 **Uvicorn** 기반으�
 - **ASGI 서버**: Uvicorn
 - **설정 관리**: Pydantic Settings / python-dotenv
 - **데이터베이스**: SQLite (`aiosqlite`)
-- **LLM 연동**: Google Gemini API (`google-genai`, 예정)
+- **LLM 연동**: Google Gemini API (`google-genai`)
 - **컨테이너**: Docker
 
 ---
@@ -26,16 +26,22 @@ backend/
 │   ├── config.py        # 환경변수 로드 및 설정 (Pydantic Settings)
 │   ├── api/
 │   │   ├── __init__.py
+│   │   ├── chat.py      # 메시지 전송 API (POST /api/chat)
 │   │   ├── health.py    # 헬스 체크 엔드포인트 (GET /api/health)
 │   │   └── sessions.py  # 세션별 이력 조회 (GET /api/sessions/{sessionId}/messages)
-│   └── db/
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── database.py  # SQLite 연결 및 messages 테이블 초기화
+│   │   └── repository.py# 메시지 CRUD, 이력 조회 및 맥락(Context) 조회
+│   └── services/
 │       ├── __init__.py
-│       ├── database.py  # SQLite 연결 및 messages 테이블 초기화
-│       └── repository.py# 메시지 CRUD 및 최근 100개 시간순 조회
+│       ├── chat_service.py    # Gemini 호출, 시스템 프롬프트 로드, 맥락 구성 모듈
+│       └── session_manager.py # 세션별 비동기 락(동시성 제어) 관리
 ├── prompts/
 │   └── system.md        # 시스템 프롬프트 (PR로만 수정)
 ├── tests/
 │   ├── __init__.py
+│   ├── test_chat.py     # Gemini 연동 및 메시지 전송 API 단위 테스트 (6대 조건 검증)
 │   ├── test_health.py   # 헬스 체크 테스트
 │   └── test_messages.py # 저장소 및 이력 조회 API 단위 테스트
 ├── .dockerignore        # 도커 빌드 제외 설정
@@ -159,6 +165,23 @@ curl -X GET http://localhost:8000/api/sessions/{sessionId}/messages
 - 메시지가 없는 세션: HTTP 200 `{"messages": []}`
 - 유효하지 않은 UUID 형식: HTTP 400 `{"error": {"code": "INVALID_REQUEST", "message": "..."}}`
 
+### 6.3 메시지 전송 및 AI 응답 (명세서 B1, B3, B4, B6)
+사용자 메시지를 전송하고 Gemini의 답변을 반환받습니다.
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "messageId": "550e8400-e29b-41d4-a716-446655440001",
+    "message": "안녕? 자기소개 부탁해!"
+  }'
+```
+- 정상 응답: HTTP 200 (AI 답변 메시지 객체 반환, DB에 `user` 및 `assistant` 메시지 `status='done'`으로 저장)
+- 재시도 지원: 동일한 `messageId`로 재요청 시 기존 사용자 메시지를 재사용(중복 저장 안 됨)
+- 이미 응답 완료된 메시지 재요청: HTTP 409 `ALREADY_ANSWERED`
+- 동일 세션 동시 요청: HTTP 409 `SESSION_BUSY` (세션별 인메모리 락 제어)
+- Gemini 오류 매핑: 429(`UPSTREAM_QUOTA`), 5xx(`UPSTREAM_ERROR`), 타임아웃(`UPSTREAM_TIMEOUT`), 안전차단(`BLOCKED`)
+
 ---
 
 ## 7. 자동화 테스트 실행 (pytest)
@@ -171,6 +194,13 @@ pytest
 ```
 
 **테스트 항목:**
+- `test_chat.py` (Issue #7 6대 완료 조건 전수 검증):
+  - `test_normal_request_returns_200_and_saves_both_messages`: 정상 요청 시 200 응답 및 두 메시지 DB 저장 검증
+  - `test_retry_same_message_id_does_not_duplicate_user_message`: 동일 `messageId` 재시도 시 사용자 메시지 중복 저장 방지 검증
+  - `test_already_answered_message_returns_409`: 이미 답변 완료된 `messageId` 요청 시 `409 ALREADY_ANSWERED` 반환 검증
+  - `test_concurrent_requests_same_session_returns_409_session_busy`: 동일 세션 동시 요청 시 `409 SESSION_BUSY` 반환 검증
+  - `test_context_turns_limit_and_excludes_failed_messages`: 최근 `CONTEXT_TURNS`(10) 턴만 맥락 포함 및 실패 사용자 메시지 제외 검증
+  - `test_upstream_error_mapping_and_no_ai_message_saved`: Gemini 오류 매핑(UPSTREAM_QUOTA 등) 및 실패 시 AI 메시지 미저장 검증
 - `test_messages.py`:
   - `test_init_db_creates_messages_table`: 서버 구동 시 `messages` 테이블 및 인덱스 자동 생성 검증
   - `test_get_messages_invalid_session_id_returns_400`: 잘못된 세션 ID 형식 검증 (`400 INVALID_REQUEST`)

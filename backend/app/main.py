@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.api.health import router as health_router
 from app.api.sessions import router as sessions_router
+from app.api.chat import router as chat_router
 from app.db.database import init_db
 
 # 로깅 기본 설정
@@ -80,6 +81,7 @@ app = FastAPI(
 # ------------------------------------------------------------------------------
 app.include_router(health_router, prefix="/api", tags=["Health"])
 app.include_router(sessions_router, prefix="/api", tags=["Sessions"])
+app.include_router(chat_router, prefix="/api", tags=["Chat"])
 
 
 @app.get("/", include_in_schema=False)
