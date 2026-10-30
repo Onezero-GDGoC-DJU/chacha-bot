@@ -1,0 +1,117 @@
+/*
+ * Design tokens — AI Chat (Dark)
+ * Source of truth: Figma "AI Chat – Dark" › Local variables
+ * https://www.figma.com/design/ZWjMLY2hTleWgMPiLdY0zM
+ *
+ * Figma variable `color/bg/base` ↔ CSS `--color-bg-base` (슬래시 → 하이픈).
+ * 다크 모드 단일 테마라서 모드 분기 없이 :root 하나에 정의한다.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Primitives (Figma: Primitives) — 컴포넌트에서 직접 쓰지 말 것 ── */
+  --gray-1000: #000000;
+  --gray-950: #0e0e10;
+  --gray-900: #1a1a1c;
+  --gray-850: #232326;
+  --gray-800: #2c2c2e;
+  --gray-700: #3a3a3c;
+  --gray-500: #6e6e73;
+  --gray-400: #8e8e93;
+  --gray-200: #c7c7cc;
+  --gray-100: #ececec;
+  --white: #ffffff;
+  --navy-700: #1b3a73;
+  --blue-500: #3b82f6;
+  --blue-400: #60a5fa;
+  --red-400: #f87171;
+  --red-950: #2a1215;
+
+  /* ── Color (Figma: Color / Dark) ── */
+  --color-bg-base: var(--gray-1000);
+  --color-bg-surface: var(--gray-900);
+  --color-bg-surface-raised: var(--gray-850);
+  --color-bg-user-bubble: var(--navy-700);
+  --color-bg-accent: var(--blue-500);
+  --color-bg-disabled: var(--gray-800);
+  --color-bg-danger-subtle: var(--red-950);
+
+  --color-text-primary: var(--gray-100);
+  --color-text-secondary: var(--gray-400);
+  --color-text-tertiary: var(--gray-500);
+  --color-text-on-bubble: var(--white);
+  --color-text-on-accent: var(--white);
+  --color-text-danger: var(--red-400);
+  --color-text-link: var(--blue-400);
+
+  --color-border-subtle: var(--gray-800);
+  --color-border-strong: var(--gray-700);
+  --color-border-danger: var(--red-400);
+
+  --color-icon-primary: var(--gray-100);
+  --color-icon-secondary: var(--gray-400);
+  --color-icon-on-accent: var(--white);
+  --color-icon-disabled: var(--gray-500);
+  --color-icon-danger: var(--red-400);
+
+  /* ── Dimension (Figma: Dimension) ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-full: 999px;
+
+  --size-content-max: 768px;
+  --size-icon-button: 36px;
+
+  /* ── Typography (Figma: Typography + Text styles) ── */
+  --font-sans: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --font-size-display: 24px;
+  --font-size-title: 18px;
+  --font-size-body: 16px;
+  --font-size-code: 14px;
+  --font-size-caption: 13px;
+
+  --line-height-display: 32px;
+  --line-height-title: 26px;
+  --line-height-body: 26px;
+  --line-height-bubble: 24px;
+  --line-height-code: 22px;
+  --line-height-caption: 18px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  /* ── Layout / behavior (Figma 컴포넌트 설명에 적힌 값) ── */
+  --header-height: 56px;
+  --bubble-max: 70%;            /* 스레드 폭 대비 사용자 말풍선 최대 폭 */
+  --composer-max-height: 200px; /* 이 높이를 넘으면 입력창 내부 스크롤 */
+  --page-gutter: var(--space-6);
+
+  /* ── Motion ── */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --header-height: 52px;
+    --bubble-max: 85%;
+    --page-gutter: var(--space-4);
+  }
+}
