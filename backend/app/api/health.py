@@ -8,8 +8,9 @@
 - 주의: Gemini API는 호출하지 않음 (할당량 절약)
 """
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, HTTPException
 from pydantic import BaseModel
+from app.db.database import check_db_health
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ class HealthResponse(BaseModel):
     response_model=HealthResponse,
     status_code=status.HTTP_200_OK,
     summary="서버 가동 상태(헬스 체크) 확인",
-    description="서버가 정상적으로 동작 중인지 확인합니다. Gemini API는 호출하지 않습니다 (명세서 B8)."
+    description="서버 및 데이터베이스 연결 상태를 확인합니다. Gemini API는 호출하지 않습니다 (명세서 B8)."
 )
 async def check_health() -> HealthResponse:
     """
@@ -35,10 +36,15 @@ async def check_health() -> HealthResponse:
 
     [명세서 B8 규칙]
     1. GET /api/health 요청 시 200 {"status": "ok"}를 반환합니다.
-    2. 데이터베이스 연결 상태를 점검할 수 있으며, Gemini API는 호출하지 않습니다.
+    2. 데이터베이스 연결 상태를 점검하고, Gemini API는 호출하지 않습니다.
     3. Docker Compose의 healthcheck 및 컨테이너 오케스트레이션에서 사용됩니다.
     """
-    # 추후 이슈 3(저장소) 구현 시, DB 연결 상태를 확인하는 로직이 여기에 추가될 수 있습니다.
-    # 예: await check_db_connection()
+    # 데이터베이스 연결 상태 확인 (명세서 B8)
+    is_db_healthy = await check_db_health()
+    if not is_db_healthy:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database connection is not healthy"
+        )
     
     return HealthResponse(status="ok")

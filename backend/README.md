@@ -10,6 +10,7 @@ chacha-bot의 API 서버입니다. Python **FastAPI**와 **Uvicorn** 기반으�
 - **웹 프레임워크**: FastAPI
 - **ASGI 서버**: Uvicorn
 - **설정 관리**: Pydantic Settings / python-dotenv
+- **데이터베이스**: SQLite (`aiosqlite`)
 - **LLM 연동**: Google Gemini API (`google-genai`, 예정)
 - **컨테이너**: Docker
 
@@ -21,13 +22,22 @@ chacha-bot의 API 서버입니다. Python **FastAPI**와 **Uvicorn** 기반으�
 backend/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py          # FastAPI 앱 인스턴스, 라이프사이클 및 라우터 등록
+│   ├── main.py          # FastAPI 앱 인스턴스, 라이프사이클(DB 초기화) 및 라우터 등록
 │   ├── config.py        # 환경변수 로드 및 설정 (Pydantic Settings)
-│   └── api/
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── health.py    # 헬스 체크 엔드포인트 (GET /api/health)
+│   │   └── sessions.py  # 세션별 이력 조회 (GET /api/sessions/{sessionId}/messages)
+│   └── db/
 │       ├── __init__.py
-│       └── health.py    # 헬스 체크 엔드포인트 (GET /api/health)
+│       ├── database.py  # SQLite 연결 및 messages 테이블 초기화
+│       └── repository.py# 메시지 CRUD 및 최근 100개 시간순 조회
 ├── prompts/
 │   └── system.md        # 시스템 프롬프트 (PR로만 수정)
+├── tests/
+│   ├── __init__.py
+│   ├── test_health.py   # 헬스 체크 테스트
+│   └── test_messages.py # 저장소 및 이력 조회 API 단위 테스트
 ├── .dockerignore        # 도커 빌드 제외 설정
 ├── Dockerfile           # 백엔드 컨테이너 빌드 파일
 ├── README.md            # 백엔드 가이드 문서
@@ -128,24 +138,32 @@ docker logs -f chacha-backend
 
 ---
 
-## 6. API 확인 (헬스 체크)
+## 6. API 엔드포인트 확인
 
-서버가 정상적으로 구동 중인지 아래 명령어로 확인합니다.
-
+### 6.1 헬스 체크
+서버 및 DB 가동 상태를 확인합니다 (명세서 B8).
 ```bash
 curl -X GET http://localhost:8000/api/health
 ```
-
 **응답 (HTTP 200):**
 ```json
 {"status":"ok"}
 ```
 
+### 6.2 세션별 대화 이력 조회 (명세서 B2)
+세션 ID의 최근 대화 이력을 시간순(오래된 것부터)으로 조회합니다.
+```bash
+curl -X GET http://localhost:8000/api/sessions/{sessionId}/messages
+```
+- 올바른 세션 ID: HTTP 200 `{"messages": [...]}`
+- 메시지가 없는 세션: HTTP 200 `{"messages": []}`
+- 유효하지 않은 UUID 형식: HTTP 400 `{"error": {"code": "INVALID_REQUEST", "message": "..."}}`
+
 ---
 
 ## 7. 자동화 테스트 실행 (pytest)
 
-`pytest`를 사용하여 작성된 헬스 체크 단위 테스트를 실행합니다.
+`pytest`를 사용하여 작성된 단위 테스트를 실행합니다.
 
 ```bash
 # backend 디렉토리 기준
@@ -153,7 +171,14 @@ pytest
 ```
 
 **테스트 항목:**
-- `test_health_check_returns_200`: `GET /api/health` 호출 시 HTTP 200 및 `{"status": "ok"}` 반환 여부 검증 (명세서 B8 완료 조건)
-- `test_root_endpoint`: 루트 경로 메타데이터 반환 검증
-- `test_lifespan_fails_when_system_prompt_missing`: 시스템 프롬프트 부재 시 서버 구동 실패 검증 (명세서 B3)
-- `test_lifespan_fails_when_system_prompt_empty`: 시스템 프롬프트 내용 공백 시 서버 구동 실패 검증 (명세서 B3)
+- `test_messages.py`:
+  - `test_init_db_creates_messages_table`: 서버 구동 시 `messages` 테이블 및 인덱스 자동 생성 검증
+  - `test_get_messages_invalid_session_id_returns_400`: 잘못된 세션 ID 형식 검증 (`400 INVALID_REQUEST`)
+  - `test_get_messages_empty_session_returns_200_and_empty_list`: 빈 세션 조회 시 200 및 빈 리스트 반환 검증
+  - `test_get_messages_returns_recent_100_in_chronological_order`: 최근 100개 메시지의 시간순 정렬 조회 검증
+  - `test_get_messages_same_timestamp_orders_by_rowid`: 동일 시각 메시지의 rowid(seq) 안정 정렬 검증
+- `test_health.py`:
+  - `test_health_check_returns_200`: `GET /api/health` 헬스 체크 검증 (DB 연결 확인 포함)
+  - `test_root_endpoint`: 루트 경로 메타데이터 반환 검증
+  - `test_lifespan_fails_when_system_prompt_missing`: 시스템 프롬프트 부재 시 서버 구동 실패 검증 (명세서 B3)
+  - `test_lifespan_fails_when_system_prompt_empty`: 시스템 프롬프트 내용 공백 시 서버 구동 실패 검증 (명세서 B3)
