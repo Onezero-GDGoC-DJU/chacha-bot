@@ -12,6 +12,9 @@ import logging
 from typing import Dict, Any, List, Optional
 import aiosqlite
 from fastapi import status
+# google-genai가 없으면 요청 시점이 아니라 서버 시작 시 바로 ImportError가 나도록 모듈 맨 위에서 import
+from google import genai
+from google.genai import types, errors
 
 from app.config import settings
 from app.db.repository import MessageRepository, now_iso
@@ -235,10 +238,6 @@ async def call_gemini(
         )
 
     try:
-        from google import genai
-        from google.genai import types
-        from google.genai import errors
-
         client = genai.Client(api_key=settings.gemini_api_key)
 
         # 60초 타임아웃 적용 (명세서 B3)
