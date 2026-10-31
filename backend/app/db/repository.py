@@ -113,3 +113,116 @@ class MessageRepository:
             "replyTo": reply_to,
             "createdAt": timestamp
         }
+
+    @staticmethod
+    async def get_message_by_id(
+        db: aiosqlite.Connection,
+        message_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        메시지 ID(PK)로 단건 메시지를 조회합니다.
+        (재시도 여부 및 중복 메시지 검증용, 명세서 B1 & B6)
+        """
+        query = """
+        SELECT id, session_id, role, content, status, reply_to, created_at
+        FROM messages
+        WHERE id = ?;
+        """
+        async with db.execute(query, (message_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "sessionId": row["session_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "status": row["status"],
+                "replyTo": row["reply_to"],
+                "createdAt": row["created_at"],
+            }
+
+    @staticmethod
+    async def get_reply_for_message(
+        db: aiosqlite.Connection,
+        user_message_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        특정 사용자 메시지(reply_to)에 이미 생성된 AI 답변이 있는지 확인합니다.
+        
+        [명세서 B1 규칙]
+        이미 답이 있는 사용자 메시지를 다시 요청하면 409 ALREADY_ANSWERED 오류를 반환합니다.
+        """
+        query = """
+        SELECT id, session_id, role, content, status, reply_to, created_at
+        FROM messages
+        WHERE reply_to = ? AND role = 'assistant';
+        """
+        async with db.execute(query, (user_message_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "sessionId": row["session_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "status": row["status"],
+                "replyTo": row["reply_to"],
+                "createdAt": row["created_at"],
+            }
+
+    @staticmethod
+    async def get_context_messages(
+        db: aiosqlite.Connection,
+        session_id: str,
+        current_message_id: str,
+        max_turns: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Gemini API 호출에 전달할 최근 대화 맥락을 조회합니다 (명세서 B4).
+        
+        [명세서 B4 맥락 구성 규칙]
+        1. 이번 메시지 직전까지 최근 CONTEXT_TURNS 턴을 가져옵니다 (기본 10턴 = 메시지 최대 20개).
+        2. status가 'stopped'인 답변도 사용자가 본 내용이므로 맥락에 포함합니다.
+        3. 답이 없는 사용자 메시지(이전에 실패한 요청)는 제외합니다 (user와 model이 번갈아 와야 함).
+        4. 현재 처리 중인 메시지(current_message_id)는 아직 완료되지 않은 상태이므로 제외하고 이전 대화만 가져옵니다.
+        5. rowid(seq) 동점 기준을 적용하여 시간순(ASC)으로 정렬합니다.
+        """
+        max_messages = max_turns * 2
+        query = """
+        SELECT id, session_id, role, content, status, reply_to, created_at
+        FROM (
+            SELECT m.rowid AS seq, m.id, m.session_id, m.role, m.content, m.status, m.reply_to, m.created_at
+            FROM messages m
+            WHERE m.session_id = ? 
+              AND m.id != ?
+              AND (
+                  -- AI 메시지인 경우 (done 또는 stopped)
+                  m.role = 'assistant'
+                  OR
+                  -- 사용자 메시지인 경우: 반드시 이 메시지에 대한 AI 답변이 존재하는 경우만 포함 (답 없는 실패 요청 제외)
+                  (m.role = 'user' AND EXISTS (
+                      SELECT 1 FROM messages reply 
+                      WHERE reply.reply_to = m.id AND reply.role = 'assistant'
+                  ))
+              )
+            ORDER BY m.created_at DESC, m.rowid DESC
+            LIMIT ?
+        )
+        ORDER BY created_at ASC, seq ASC;
+        """
+        async with db.execute(query, (session_id, current_message_id, max_messages)) as cursor:
+            rows = await cursor.fetchall()
+            messages = []
+            for row in rows:
+                messages.append({
+                    "id": row["id"],
+                    "sessionId": row["session_id"],
+                    "role": row["role"],
+                    "content": row["content"],
+                    "status": row["status"],
+                    "replyTo": row["reply_to"],
+                    "createdAt": row["created_at"],
+                })
+            return messages
