@@ -21,7 +21,13 @@ async function sendChat(sessionId, messageId, content) {
     }),
   })
 
-  const result = await res.json()
+  const result = await res.json().catch(() => null)
+
+  if (res.status === 429) {
+    const error = new Error('요청이 많아요. 잠시 후 다시 시도해 주세요.')
+    error.code = 'RATE_LIMITED'
+    throw error
+  }
 
   if (!res.ok) {
     const error = new Error(
@@ -71,55 +77,57 @@ function App() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
 
-async function handleSend(content = draft, retryMessage = null) {
-  const trimmedContent = content.trim()
+  async function handleSend(content = draft, retryMessage = null) {
+    const trimmedContent = content.trim()
 
-  if (
-    !trimmedContent ||
-    trimmedContent.length > MAX_MESSAGE_CHARS ||
-    sending
-  ) {
-    return
-  }
-
-  const userMessage = retryMessage ?? {
-    id: createUUID(),
-    role: 'user',
-    content: trimmedContent,
-    createdAt: new Date().toISOString(),
-  }
-
-  if (!retryMessage) {
-    setMessages((current) => [...current, userMessage])
-    setDraft('')
-  }
-
-  setSendError(null)
-  setSending(true)
-
-  try {
-    const assistantMessage = await sendChat(
-      sessionId,
-      userMessage.id,
-      userMessage.content,
-    )
-    setMessages((current) => [...current, assistantMessage])
-  } catch (error) {
-    if (error.code === 'ALREADY_ANSWERED') {
-      setReloadKey((key) => key + 1)
+    if (
+      !trimmedContent ||
+      trimmedContent.length > MAX_MESSAGE_CHARS ||
+      sending ||
+      loading ||
+      historyError
+    ) {
       return
     }
 
-    const retryable = !['INVALID_REQUEST', 'BLOCKED'].includes(error.code)
+    const userMessage = retryMessage ?? {
+      id: createUUID(),
+      role: 'user',
+      content: trimmedContent,
+      createdAt: new Date().toISOString(),
+    }
 
-    setSendError({
-      message: error.code ? error.message : '답변을 받지 못했어요.',
-      retryable,
-    })
-  } finally {
-    setSending(false)
+    if (!retryMessage) {
+      setMessages((current) => [...current, userMessage])
+      setDraft('')
+    }
+
+    setSendError(null)
+    setSending(true)
+
+    try {
+      const assistantMessage = await sendChat(
+        sessionId,
+        userMessage.id,
+        userMessage.content,
+      )
+      setMessages((current) => [...current, assistantMessage])
+    } catch (error) {
+      if (error.code === 'ALREADY_ANSWERED') {
+        setReloadKey((key) => key + 1)
+        return
+      }
+
+      const retryable = !['INVALID_REQUEST', 'BLOCKED'].includes(error.code)
+
+      setSendError({
+        message: error.code ? error.message : '답변을 받지 못했어요.',
+        retryable,
+      })
+    } finally {
+      setSending(false)
+    }
   }
-}
 
   useEffect(() => {
     let cancelled = false
@@ -195,79 +203,79 @@ async function handleSend(content = draft, retryMessage = null) {
             <div className="time-divider">오늘</div>
 
             {messages.map((message) =>
-  message.role === 'user' ? (
-    <div className="msg-user" key={message.id}>
-      <div className="msg-user__bubble">{message.content}</div>
-    </div>
-  ) : (
-    <article className="msg-ai" key={message.id}>
-      <p>{message.content}</p>
-    </article>
-  ),
-)}
+              message.role === 'user' ? (
+                <div className="msg-user" key={message.id}>
+                  <div className="msg-user__bubble">{message.content}</div>
+                </div>
+              ) : (
+                <article className="msg-ai" key={message.id}>
+                  <p>{message.content}</p>
+                </article>
+              ),
+            )}
 
-{sending && (
-  <div
-    className="typing-indicator"
-    role="status"
-    aria-label="답변 생성 중"
-  >
-    <span />
-    <span />
-    <span />
-  </div>
-)}
+            {sending && (
+              <div
+                className="typing-indicator"
+                role="status"
+                aria-label="답변 생성 중"
+              >
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
 
-{unanswered && !sending && (
-  <div className="msg-error" role="alert">
-    <p className="msg-error__text">
-      {sendError?.message ?? '답변을 받지 못했어요.'}
-    </p>
+            {unanswered && !sending && (
+              <div className="msg-error" role="alert">
+                <p className="msg-error__text">
+                  {sendError?.message ?? '답변을 받지 못했어요.'}
+                </p>
 
-    {sendError?.retryable !== false && (
-      <button
-        className="btn-retry"
-        type="button"
-        onClick={() => handleSend(lastMessage.content, lastMessage)}
-        disabled={sending}
-      >
-        다시 시도
-      </button>
-    )}
-  </div>
-)}
-            </section>
+                {sendError?.retryable !== false && (
+                  <button
+                    className="btn-retry"
+                    type="button"
+                    onClick={() => handleSend(lastMessage.content, lastMessage)}
+                    disabled={sending}
+                  >
+                    다시 시도
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
         </main>
-)}
+      )}
 
       <footer className="chat-footer">
         <div className="composer">
           <textarea
-  className="composer__input"
-  aria-label="메시지 입력"
-  placeholder="메시지를 입력하세요"
-  rows={1}
-  value={draft}
-  maxLength={MAX_MESSAGE_CHARS}
-  onChange={(event) => setDraft(event.target.value)}
-  onKeyDown={(event) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+            className="composer__input"
+            aria-label="메시지 입력"
+            placeholder="메시지를 입력하세요"
+            rows={1}
+            value={draft}
+            maxLength={MAX_MESSAGE_CHARS}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
 
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      handleSend()
-    }
-  }}
-/>
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                handleSend()
+              }
+            }}
+          />
           <button
-  className="send-button"
-  type="button"
-  aria-label="보내기"
-  onClick={() => handleSend()}
-  disabled={!draft.trim() || draft.trim().length > MAX_MESSAGE_CHARS || sending}
->
-  ↑
-</button>
+            className="send-button"
+            type="button"
+            aria-label="보내기"
+            onClick={() => handleSend()}
+            disabled={!draft.trim() || draft.trim().length > MAX_MESSAGE_CHARS || sending || loading || historyError}
+          >
+            ↑
+          </button>
         </div>
         <p className="chat-footer__disclaimer">chacha는 실수할 수 있어요.</p>
       </footer>
