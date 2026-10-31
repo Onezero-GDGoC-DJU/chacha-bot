@@ -84,6 +84,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+> [!NOTE]
+> 최신 `main`을 받은 뒤에는 이 명령을 **다시 실행**하세요. 새 패키지가 추가되었을 수 있습니다. 예를 들어 `google-genai`가 없으면 서버가 시작할 때 `ImportError: cannot import name 'genai' from 'google'`로 멈춥니다(#28).
+
 ### 4.3 환경변수 설정
 
 프로젝트 루트의 `.env.example` 파일을 복사하여 `.env` 파일을 생성하고 필요한 값을 입력합니다.
@@ -104,6 +107,12 @@ copy .env.example .env    # Windows
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+> [!NOTE]
+> `.env`의 `DATABASE_PATH=/data/chacha.db`는 Docker용 경로입니다. 로컬에서 그대로 실행하면 현재 드라이브 맨 위에 `\data` 폴더가 만들어집니다(예: `E:\data\chacha.db`). backend 폴더 안에 두려면 실행 전에 경로를 바꿔 주세요. `*.db` 파일은 커밋되지 않습니다.
+> ```powershell
+> $env:DATABASE_PATH = "./chacha.db"
+> ```
+
 - 실행 주소: `http://localhost:8000`
 - API 문서 (Swagger UI): `http://localhost:8000/docs`
 - 헬스 체크: `http://localhost:8000/api/health`
@@ -123,14 +132,17 @@ docker build -t chacha-backend .
 
 ### 5.2 Docker 컨테이너 실행
 
-```bash
-# 환경변수 파일(.env)을 주입하여 컨테이너 실행
-docker run -d \
-  --name chacha-backend \
-  -p 8000:8000 \
-  --env-file ../.env \
-  chacha-backend
+> [!TIP]
+> nginx·프론트까지 함께 실행하려면 루트에서 `docker compose up --build -d`를 사용하세요([루트 README](../README.md#실행-방법)). 아래는 백엔드만 따로 확인할 때의 방법입니다.
+
+```powershell
+# 환경변수 파일(.env)을 주입하고, 대화 이력(/data)을 볼륨에 저장하여 컨테이너 실행
+docker run -d --name chacha-backend -p 8000:8000 --env-file ../.env -v chacha-backend-data:/data chacha-backend
 ```
+
+- 한 줄 명령이라 PowerShell, macOS/Linux 터미널 모두에서 그대로 실행됩니다.
+- `-v` 없이 실행하면 컨테이너를 지울 때 대화 이력도 함께 사라집니다.
+- 다시 실행하기 전에 기존 컨테이너를 지워야 합니다: `docker rm -f chacha-backend`
 
 ### 5.3 컨테이너 상태 및 로그 확인
 
