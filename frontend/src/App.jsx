@@ -2,29 +2,24 @@ import { useEffect, useState } from 'react'
 import './tokens.css'
 import './components.css'
 
-const MOCK_MESSAGES = [
-  {
-    id: '1',
-    role: 'user',
-    content: '안녕!',
-    status: 'done',
-    replyTo: null,
-    createdAt: '2026-10-30T09:00:00Z',
-  },
-  {
-    id: '2',
-    role: 'assistant',
-    content: '안녕하세요! 저는 chacha예요. 무엇을 도와드릴까요?',
-    status: 'done',
-    replyTo: '1',
-    createdAt: '2026-10-30T09:00:02Z',
-  },  
-]
+async function fetchHistory(sessionId) {
+  const res = await fetch(`/api/sessions/${sessionId}/messages`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
 
-async function getMockHistory(sessionId) {
-  await new Promise((resolve) => setTimeout(resolve, 700))
+function createUUID() {
+  if (crypto.randomUUID) return crypto.randomUUID()
 
-  return { sessionId, messages: MOCK_MESSAGES }
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 function getOrCreateSessionId() {
@@ -32,14 +27,13 @@ function getOrCreateSessionId() {
     const savedId = localStorage.getItem('chacha.sessionId')
     if (savedId) return savedId
 
-    const newId = crypto.randomUUID()
+    const newId = createUUID()
     localStorage.setItem('chacha.sessionId', newId)
     return newId
   } catch {
-    return crypto.randomUUID()
+    return createUUID()
   }
 }
-
 function App() {
   const [sessionId] = useState(getOrCreateSessionId)
   const [messages, setMessages] = useState([])
@@ -53,7 +47,7 @@ function App() {
     setLoading(true)
     setHistoryError(false)
 
-    getMockHistory(sessionId)
+    fetchHistory(sessionId)
       .then((result) => {
         if (!cancelled) setMessages(result.messages)
       })
