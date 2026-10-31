@@ -24,7 +24,12 @@ async function sendChat(sessionId, messageId, content) {
   const result = await res.json()
 
   if (!res.ok) {
-    throw new Error(result?.error?.message || '답변을 받지 못했어요.')
+    const error = new Error(
+      result?.error?.message || '답변을 받지 못했어요.',
+    )
+    error.status = res.status
+    error.code = result?.error?.code
+    throw error
   }
 
   return result.message
@@ -64,8 +69,9 @@ function App() {
   const [reloadKey, setReloadKey] = useState(0)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState(null)
 
-  async function handleSend(content = draft, retryMessage = null) {
+async function handleSend(content = draft, retryMessage = null) {
   const trimmedContent = content.trim()
 
   if (
@@ -88,6 +94,7 @@ function App() {
     setDraft('')
   }
 
+  setSendError(null)
   setSending(true)
 
   try {
@@ -98,7 +105,17 @@ function App() {
     )
     setMessages((current) => [...current, assistantMessage])
   } catch (error) {
-    console.error('메시지 전송 실패:', error)
+    if (error.code === 'ALREADY_ANSWERED') {
+      setReloadKey((key) => key + 1)
+      return
+    }
+
+    const retryable = !['INVALID_REQUEST', 'BLOCKED'].includes(error.code)
+
+    setSendError({
+      message: error.code ? error.message : '답변을 받지 못했어요.',
+      retryable,
+    })
   } finally {
     setSending(false)
   }
@@ -203,20 +220,25 @@ function App() {
 
 {unanswered && !sending && (
   <div className="msg-error" role="alert">
-    <p className="msg-error__text">답변을 받지 못했어요.</p>
-    <button
-      className="btn-retry"
-      type="button"
-      onClick={() => handleSend(lastMessage.content, lastMessage)}
-      disabled={sending}
-    >
-      다시 시도
-    </button>
+    <p className="msg-error__text">
+      {sendError?.message ?? '답변을 받지 못했어요.'}
+    </p>
+
+    {sendError?.retryable !== false && (
+      <button
+        className="btn-retry"
+        type="button"
+        onClick={() => handleSend(lastMessage.content, lastMessage)}
+        disabled={sending}
+      >
+        다시 시도
+      </button>
+    )}
   </div>
 )}
-          </section>
+            </section>
         </main>
-      )}
+)}
 
       <footer className="chat-footer">
         <div className="composer">
