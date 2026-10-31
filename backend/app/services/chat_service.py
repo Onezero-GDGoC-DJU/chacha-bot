@@ -9,7 +9,7 @@
 import uuid
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, AsyncIterator
 import aiosqlite
 from fastapi import status
 # google-genai가 없으면 요청 시점이 아니라 서버 시작 시 바로 ImportError가 나도록 모듈 맨 위에서 import
@@ -329,27 +329,138 @@ async def call_gemini(
     return response.text
 
 
+async def call_gemini_stream(
+    contents: List[Dict[str, Any]],
+    system_instruction: str
+) -> AsyncIterator[Any]:
+    """
+    [명세서 S1 Gemini 스트리밍 호출]
+    
+    1. SDK: client.aio.models.generate_content_stream 사용
+    2. 시간 제한: 60초 타임아웃
+    3. 오류 발생 시 명세서 4장 규격의 ChatServiceError로 변환
+    """
+    if not settings.gemini_api_key:
+        logger.error("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
+        raise ChatServiceError(
+            http_status=status.HTTP_502_BAD_GATEWAY,
+            code="UPSTREAM_ERROR",
+            message="답변을 받지 못했어요."
+        )
+
+    from google import genai
+    from google.genai import types
+    from google.genai import errors
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+
+    try:
+        # SDK 스트림 요청 초기화
+        stream_res = client.aio.models.generate_content_stream(
+            model=settings.gemini_model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+            )
+        )
+        if asyncio.iscoroutine(stream_res) or hasattr(stream_res, "__await__"):
+            stream = await stream_res
+        else:
+            stream = stream_res
+
+    except errors.APIError as exc:
+        logger.error(f"Gemini 스트림 초기화 오류: {exc.code} {exc}")
+        if exc.code == 429:
+            raise ChatServiceError(
+                http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+                code="UPSTREAM_QUOTA",
+                message="요청이 많아요. 잠시 후 다시 시도해 주세요."
+            )
+        raise ChatServiceError(
+            http_status=status.HTTP_502_BAD_GATEWAY,
+            code="UPSTREAM_ERROR",
+            message="답변을 받지 못했어요."
+        )
+    except ChatServiceError:
+        raise
+    except Exception as exc:
+        logger.error(f"Gemini 스트림 초기화 실패: {exc}")
+        raise ChatServiceError(
+            http_status=status.HTTP_502_BAD_GATEWAY,
+            code="UPSTREAM_ERROR",
+            message="답변을 받지 못했어요."
+        )
+
+    # 스트림 소비 제너레이터 (청크 스트리밍 도중 발생하는 예외 변환 및 타임아웃 감시)
+    start_time = asyncio.get_event_loop().time()
+
+    async def _stream_wrapper():
+        try:
+            async for chunk in stream:
+                # 60초 전체 타임아웃 검사
+                if asyncio.get_event_loop().time() - start_time > 60.0:
+                    raise asyncio.TimeoutError()
+                yield chunk
+        except asyncio.TimeoutError:
+            logger.error("Gemini 스트림 수신 시간 초과 (60초 초과)")
+            raise ChatServiceError(
+                http_status=status.HTTP_504_GATEWAY_TIMEOUT,
+                code="UPSTREAM_TIMEOUT",
+                message="답변을 받지 못했어요."
+            )
+        except errors.APIError as exc:
+            logger.error(f"Gemini 스트림 수신 중 API 오류: {exc.code} {exc}")
+            if exc.code == 429:
+                raise ChatServiceError(
+                    http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    code="UPSTREAM_QUOTA",
+                    message="요청이 많아요. 잠시 후 다시 시도해 주세요."
+                )
+            raise ChatServiceError(
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                code="UPSTREAM_ERROR",
+                message="답변을 받지 못했어요."
+            )
+        except ChatServiceError:
+            raise
+        except asyncio.CancelledError:
+            # 클라이언트 연결 끊김으로 인한 비동기 태스크 취소는 상위로 전달
+            raise
+        except Exception as exc:
+            logger.error(f"Gemini 스트림 수신 중 예기치 못한 오류: {exc}")
+            raise ChatServiceError(
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                code="UPSTREAM_ERROR",
+                message="답변을 받지 못했어요."
+            )
+
+    return _stream_wrapper()
+
+
 async def save_ai_message(
     db: aiosqlite.Connection,
     session_id: str,
     reply_to_message_id: str,
-    content: str
+    content: str,
+    message_id: Optional[str] = None,
+    status: str = "done"
 ) -> Dict[str, Any]:
     """
-    [명세서 B1 처리 순서 6: AI 메시지 저장]
+    [명세서 B1 & S5 AI 메시지 저장]
     
-    1. AI 메시지는 서버가 새 UUID를 발급
-    2. status='done', reply_to=사용자 messageId로 저장
-    3. 실패 시에는 호출되지 않으므로 실패한 AI 답변은 저장되지 않음 (완료 조건 6)
+    1. message_id가 전달되지 않으면 서버가 새 UUID를 발급 (스트리밍 시에는 미리 발급된 ID 사용)
+    2. status: 'done'(정상 완료) 또는 'stopped'(사용자 중단/연결 끊김)
+    3. reply_to=사용자 messageId로 저장
+    4. 실패 시에는 호출되지 않으므로 실패한 AI 답변은 저장되지 않음 (완료 조건 6 & S5)
     """
-    ai_message_id = str(uuid.uuid4())
+    ai_message_id = message_id or str(uuid.uuid4())
     ai_message = await MessageRepository.insert_message(
         db=db,
         message_id=ai_message_id,
         session_id=session_id,
         role="assistant",
         content=content,
-        status="done",
+        status=status,
         created_at=now_iso(),
         reply_to=reply_to_message_id
     )
