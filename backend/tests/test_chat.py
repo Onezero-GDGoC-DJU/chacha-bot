@@ -1,22 +1,25 @@
 """
 메시지 전송 및 Gemini 연동 API 단위 테스트 (test_chat.py)
 
-이슈 7번 완료 조건 전수 검증:
+이슈 7번 완료 조건 및 리뷰 반영 전수 검증:
 1. 정상 요청에 200 과 AI 메시지를 돌려주고 두 메시지가 저장된다.
-2. 같은 messageId 로 다시 보내도 사용자 메시지가 중복 저장되지 않는다.
+2. 같은 messageId 로 다시 보내도 사용자 메시지가 중복 저장되지 않는다 (재시도 지원).
 3. 같은 세션에서 동시에 보내면 409 SESSION_BUSY.
 4. 최근 CONTEXT_TURNS 턴만 맥락에 들어간다 (답 없는 실패 요청 제외).
-5. Gemini 429·5xx·시간 초과·안전 차단이 4장의 코드로 바뀐다.
+5. Gemini 429·5xx·시간 초과·안전 차단이 4장의 코드로 바뀐다 (SDK Client 레벨 모킹으로 검증).
 6. 실패하면 AI 메시지는 저장되지 않는다.
+7. RequestValidationError 발생 시 422 대신 400 INVALID_REQUEST 반환.
 """
 
 import uuid
 import sqlite3
+import asyncio
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 import aiosqlite
+from google.genai import errors
 
 from app.main import app
 from app.config import settings
@@ -27,6 +30,25 @@ from app.services.chat_service import (
     ChatServiceError,
     build_context_contents
 )
+
+
+def make_mock_response(text: str = "테스트 답변", finish_reason: str = "STOP", block_reason: str = None):
+    """
+    Gemini API generate_content 응답을 흉내내는 모의(Mock) 응답 객체 생성
+    """
+    mock_resp = MagicMock()
+    mock_resp.text = text
+    if block_reason:
+        mock_feedback = MagicMock()
+        mock_feedback.block_reason = block_reason
+        mock_resp.prompt_feedback = mock_feedback
+    else:
+        mock_resp.prompt_feedback = None
+
+    mock_candidate = MagicMock()
+    mock_candidate.finish_reason = finish_reason
+    mock_resp.candidates = [mock_candidate]
+    return mock_resp
 
 
 @pytest.fixture
@@ -45,15 +67,18 @@ def test_post_chat_success_and_saves_both_messages(client):
     """
     [완료 조건 1]
     정상 요청에 200과 AI 메시지를 돌려주고 사용자/AI 두 메시지가 모두 DB에 저장된다.
+    SDK 호출(google.genai.Client)을 모킹하여 call_gemini 내부 로직까지 실제 검증한다.
     """
     session_id = str(uuid.uuid4())
     message_id = str(uuid.uuid4())
     user_msg_text = "안녕? 반가워"
     ai_reply_text = "안녕! 나는 chacha야 ㅋㅋ 무엇을 도와줄까?"
 
-    # Gemini API 호출을 Mocking하여 성공 응답 시뮬레이션
-    with patch("app.api.chat.call_gemini", new_callable=AsyncMock) as mock_gemini:
-        mock_gemini.return_value = ai_reply_text
+    mock_resp = make_mock_response(text=ai_reply_text, finish_reason="STOP")
+
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_resp)
 
         response = client.post(
             "/api/chat",
@@ -100,38 +125,45 @@ def test_post_chat_success_and_saves_both_messages(client):
 
 def test_post_chat_duplicate_message_id_retry_does_not_duplicate_user_message(client):
     """
-    [완료 조건 2]
-    같은 messageId로 재시도 요청을 보내도 사용자 메시지가 중복 저장되지 않는다.
+    [완료 조건 2 & 리뷰 반영 3]
+    같은 messageId로 재시도 요청을 보내도 사용자 메시지가 중복 저장되지 않으며,
+    재시도 시 DB에 처음 저장된 내용이 유지된다.
     """
     session_id = str(uuid.uuid4())
     message_id = str(uuid.uuid4())
 
-    # 1. 첫 번째 시도: Gemini 호출 중 일시적 오류 발생 (사용자 메시지만 DB에 저장됨)
-    with patch("app.api.chat.call_gemini", new_callable=AsyncMock) as mock_gemini:
-        mock_gemini.side_effect = ChatServiceError(502, "UPSTREAM_ERROR", "답변을 받지 못했어요.")
+    # 1. 첫 번째 시도: Gemini 호출 중 500 API 오류 발생 (사용자 메시지만 DB에 저장됨)
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.aio.models.generate_content = AsyncMock(
+            side_effect=errors.APIError(code=500, response_json={"error": {"code": 500, "message": "Server Error"}})
+        )
         resp1 = client.post(
             "/api/chat",
-            json={"sessionId": session_id, "messageId": message_id, "message": "재시도 테스트 질문"}
+            json={"sessionId": session_id, "messageId": message_id, "message": "처음 전송한 질문"}
         )
         assert resp1.status_code == 502
 
-    # 2. 두 번째 시도: 같은 messageId로 재시도 요청 -> 성공
-    with patch("app.api.chat.call_gemini", new_callable=AsyncMock) as mock_gemini:
-        mock_gemini.return_value = "재시도 성공 답변입니다."
+    # 2. 두 번째 시도: 같은 messageId로 재시도 요청 (클라이언트가 메시지를 바꿨더라도 DB의 원래 내용 사용) -> 성공
+    mock_resp = make_mock_response(text="재시도 성공 답변입니다.", finish_reason="STOP")
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_resp)
         resp2 = client.post(
             "/api/chat",
-            json={"sessionId": session_id, "messageId": message_id, "message": "재시도 테스트 질문"}
+            json={"sessionId": session_id, "messageId": message_id, "message": "수정한 질문"}
         )
         assert resp2.status_code == 200
 
-    # 3. DB 확인: 사용자 메시지는 1개만 존재해야 함 (중복 저장 X)
+    # 3. DB 확인: 사용자 메시지는 1개만 존재해야 하고, 내용은 처음 저장한 '처음 전송한 질문'이어야 함
     conn = sqlite3.connect(get_db_path())
     cursor = conn.cursor()
-    cursor.execute("SELECT id, role FROM messages WHERE session_id = ? AND role = 'user';", (session_id,))
+    cursor.execute("SELECT id, role, content FROM messages WHERE session_id = ? AND role = 'user';", (session_id,))
     user_rows = cursor.fetchall()
     conn.close()
 
     assert len(user_rows) == 1, f"사용자 메시지가 1개여야 하지만 {len(user_rows)}개가 저장되었습니다."
+    assert user_rows[0][2] == "처음 전송한 질문", "재시도 시 처음 저장된 사용자 메시지 내용이 유지되어야 합니다."
 
 
 def test_post_chat_already_answered_returns_409(client):
@@ -142,9 +174,11 @@ def test_post_chat_already_answered_returns_409(client):
     session_id = str(uuid.uuid4())
     message_id = str(uuid.uuid4())
 
-    # 1. 정상 답변 완료
-    with patch("app.api.chat.call_gemini", new_callable=AsyncMock) as mock_gemini:
-        mock_gemini.return_value = "첫 번째 답변 완료"
+    mock_resp = make_mock_response(text="첫 번째 답변 완료", finish_reason="STOP")
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_resp)
+
         resp1 = client.post(
             "/api/chat",
             json={"sessionId": session_id, "messageId": message_id, "message": "질문"}
@@ -169,7 +203,6 @@ def test_post_chat_concurrent_request_returns_409_session_busy(client):
     session_id = str(uuid.uuid4())
 
     # 세션 락을 인위적으로 획득하여 '답변 생성 중' 시뮬레이션
-    import asyncio
     asyncio.run(session_manager.acquire(session_id))
 
     try:
@@ -230,7 +263,6 @@ def test_post_chat_context_includes_only_recent_n_turns_and_excludes_failed_msg(
     conn.close()
 
     # 이번 메시지로 맥락 구성 실행
-    import asyncio
     async def _check():
         async with aiosqlite.connect(db_path) as aio_db:
             aio_db.row_factory = aiosqlite.Row
@@ -250,7 +282,6 @@ def test_post_chat_context_includes_only_recent_n_turns_and_excludes_failed_msg(
         assert item["parts"][0]["text"] != "실패한 질문 (답변 없음)", "답이 없는 사용자 메시지는 맥락에서 제외되어야 합니다."
 
     # 2. 최근 10턴(최대 20개 메시지) + 이번 메시지 1개 = 총 21개 메시지여야 함 (12턴 중 앞의 2턴은 슬라이싱되어 제외)
-    # 총 메시지 수: 20개(이전 최근 10턴) + 1개(이번 질문) = 21개
     assert len(contents) == 21, f"맥락 메시지 수는 21개여야 하지만 {len(contents)}개입니다."
 
     # 3. 가장 오래된 포함 메시지는 질문 2여야 함 (0, 1은 제외됨)
@@ -260,29 +291,43 @@ def test_post_chat_context_includes_only_recent_n_turns_and_excludes_failed_msg(
 
 def test_post_chat_gemini_error_mapping_to_spec(client):
     """
-    [완료 조건 5]
-    Gemini 429, 5xx, 시간 초과, 안전 차단이 명세서 4장의 코드로 변환된다.
+    [완료 조건 5 & 리뷰 반영 1 & 2]
+    call_gemini 내부의 SDK(google.genai.Client)를 모킹하여,
+    Gemini 429, 5xx, 시간 초과, 안전/콘텐츠 차단(SAFETY, PROHIBITED_CONTENT 등), 빈 답변이
+    명세서 4장의 코드로 정확히 변환되는지 실제 에러 판별 로직을 검증한다.
     """
     session_id = str(uuid.uuid4())
 
-    test_cases = [
-        (ChatServiceError(429, "UPSTREAM_QUOTA", "요청이 많아요. 잠시 후 다시 시도해 주세요."), 429, "UPSTREAM_QUOTA"),
-        (ChatServiceError(502, "UPSTREAM_ERROR", "답변을 받지 못했어요."), 502, "UPSTREAM_ERROR"),
-        (ChatServiceError(504, "UPSTREAM_TIMEOUT", "답변을 받지 못했어요."), 504, "UPSTREAM_TIMEOUT"),
-        (ChatServiceError(422, "BLOCKED", "이 질문에는 답변할 수 없어요."), 422, "BLOCKED"),
+    cases = [
+        # (mock_outcome, expected_status, expected_code)
+        (errors.APIError(code=429, response_json={"error": {"code": 429, "message": "Quota exceeded"}}), 429, "UPSTREAM_QUOTA"),
+        (errors.APIError(code=500, response_json={"error": {"code": 500, "message": "Internal error"}}), 502, "UPSTREAM_ERROR"),
+        (errors.APIError(code=503, response_json={"error": {"code": 503, "message": "Service unavailable"}}), 502, "UPSTREAM_ERROR"),
+        (asyncio.TimeoutError(), 504, "UPSTREAM_TIMEOUT"),
+        (make_mock_response(text="", finish_reason="SAFETY"), 422, "BLOCKED"),
+        (make_mock_response(text="", finish_reason="PROHIBITED_CONTENT"), 422, "BLOCKED"),
+        (make_mock_response(text="", finish_reason="BLOCKLIST"), 422, "BLOCKED"),
+        (make_mock_response(text="", finish_reason="SPII"), 422, "BLOCKED"),
+        (make_mock_response(text="", finish_reason="STOP"), 502, "UPSTREAM_ERROR"),  # 빈 답변
+        (make_mock_response(text="   ", finish_reason="STOP"), 502, "UPSTREAM_ERROR"), # 공백 답변
     ]
 
-    for err_mock, exp_status, exp_code in test_cases:
-        with patch("app.api.chat.call_gemini", new_callable=AsyncMock) as mock_gemini:
-            mock_gemini.side_effect = err_mock
+    for outcome, exp_status, exp_code in cases:
+        with patch("google.genai.Client") as mock_client_cls:
+            mock_client = mock_client_cls.return_value
+            if isinstance(outcome, Exception):
+                mock_client.aio.models.generate_content = AsyncMock(side_effect=outcome)
+            else:
+                mock_client.aio.models.generate_content = AsyncMock(return_value=outcome)
+
             msg_id = str(uuid.uuid4())
             resp = client.post(
                 "/api/chat",
-                json={"sessionId": session_id, "messageId": msg_id, "message": "에러 변환 테스트"}
+                json={"sessionId": session_id, "messageId": msg_id, "message": "에러 변환 검증 질문"}
             )
-            assert resp.status_code == exp_status, f"{exp_code}의 상태 코드는 {exp_status}여야 하지만 {resp.status_code}입니다."
+            assert resp.status_code == exp_status, f"{exp_code}의 상태 코드는 {exp_status}여야 하지만 {resp.status_code}를 받았습니다."
             data = resp.json()
-            assert data["error"]["code"] == exp_code, f"에러 코드는 {exp_code}여야 하지만 {data['error']['code']}입니다."
+            assert data["error"]["code"] == exp_code, f"에러 코드는 {exp_code}여야 하지만 {data['error']['code']}를 받았습니다."
 
 
 def test_post_chat_failure_does_not_save_ai_message(client):
@@ -294,8 +339,9 @@ def test_post_chat_failure_does_not_save_ai_message(client):
     message_id = str(uuid.uuid4())
 
     # 타임아웃 오류 시뮬레이션
-    with patch("app.api.chat.call_gemini", new_callable=AsyncMock) as mock_gemini:
-        mock_gemini.side_effect = ChatServiceError(504, "UPSTREAM_TIMEOUT", "답변을 받지 못했어요.")
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.aio.models.generate_content = AsyncMock(side_effect=asyncio.TimeoutError())
         resp = client.post(
             "/api/chat",
             json={"sessionId": session_id, "messageId": message_id, "message": "타임아웃 발생 테스트"}
@@ -311,3 +357,31 @@ def test_post_chat_failure_does_not_save_ai_message(client):
 
     assert len(rows) == 1, "사용자 메시지만 1개 저장되어야 합니다."
     assert rows[0][0] == "user", "저장된 메시지는 user 역할이어야 합니다."
+
+
+def test_request_validation_error_returns_400_invalid_request(client):
+    """
+    [리뷰 반영 3]
+    FastAPI의 RequestValidationError(누락된 필드, 잘못된 타입 등) 발생 시
+    422(BLOCKED로 오인 가능)가 아닌 400 INVALID_REQUEST가 반환된다.
+    """
+    session_id = str(uuid.uuid4())
+
+    # 1. message 필드가 숫자인 경우
+    resp1 = client.post(
+        "/api/chat",
+        json={"sessionId": session_id, "messageId": str(uuid.uuid4()), "message": 12345}
+    )
+    assert resp1.status_code == 400
+    data1 = resp1.json()
+    assert data1["error"]["code"] == "INVALID_REQUEST"
+    assert data1["error"]["message"] == "요청을 처리할 수 없어요."
+
+    # 2. 필수 필드가 누락된 경우
+    resp2 = client.post(
+        "/api/chat",
+        json={"sessionId": session_id}
+    )
+    assert resp2.status_code == 400
+    data2 = resp2.json()
+    assert data2["error"]["code"] == "INVALID_REQUEST"

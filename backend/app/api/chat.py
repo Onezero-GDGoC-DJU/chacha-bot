@@ -118,7 +118,7 @@ async def post_chat(
         # 3. 사용자 메시지 저장 및 재시도 확인 (명세서 B1)
         # [완료 조건 2] 같은 messageId 재시도 시 중복 저장 방지
         # ----------------------------------------------------------------------
-        await prepare_user_message(
+        user_message_record = await prepare_user_message(
             db=db,
             session_id=session_id,
             message_id=message_id,
@@ -134,7 +134,7 @@ async def post_chat(
             db=db,
             session_id=session_id,
             current_message_id=message_id,
-            current_message=clean_message
+            current_message=user_message_record["content"]  # 재시도 시 DB에 처음 저장된 내용 유지
         )
 
         # ----------------------------------------------------------------------

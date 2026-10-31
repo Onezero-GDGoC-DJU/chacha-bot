@@ -9,14 +9,16 @@ FastAPI 애플리케이션 인스턴스를 생성하고 생명주기 이벤트 �
 
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from app.config import settings
 from app.api.health import router as health_router
 from app.api.sessions import router as sessions_router
 from app.api.chat import router as chat_router
 from app.db.database import init_db
+from app.services.chat_service import set_cached_system_instruction
 
 # 로깅 기본 설정
 logging.basicConfig(
@@ -54,7 +56,9 @@ async def lifespan(app: FastAPI):
     if not content:
         raise RuntimeError(f"시스템 프롬프트 파일이 비어 있습니다: {prompt_path}")
 
-    logger.info(f"시스템 프롬프트 로드 완료: {prompt_path} ({len(content)}자)")
+    # 시스템 프롬프트 캐싱 (매 요청마다 파일 읽기 방지)
+    set_cached_system_instruction(content)
+    logger.info(f"시스템 프롬프트 로드 및 캐시 완료: {prompt_path} ({len(content)}자)")
 
     # [명세서 B5 완료 조건]
     # 서버 시작 시 messages 테이블이 없으면 생성
@@ -74,6 +78,18 @@ app = FastAPI(
     redoc_url="/redoc",     # ReDoc 문서
     lifespan=lifespan
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """
+    FastAPI 기본 요청 검증 실패(422)를 명세서 4장 규격의 400 INVALID_REQUEST로 변환합니다.
+    (명세서 4장에서 422는 BLOCKED 응답 전용으로 사용되므로, 입력 형식 오류는 400으로 통일)
+    """
+    return JSONResponse(
+        status_code=400,
+        content={"error": {"code": "INVALID_REQUEST", "message": "요청을 처리할 수 없어요."}},
+    )
 
 # ------------------------------------------------------------------------------
 # 라우터 등록

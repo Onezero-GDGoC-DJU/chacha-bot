@@ -18,6 +18,17 @@ from app.db.repository import MessageRepository, now_iso
 
 logger = logging.getLogger("chacha-backend.chat")
 
+# 서버 시작 시(lifespan) 한 번 로드한 시스템 프롬프트를 보관하는 인메모리 캐시 (요청당 디스크 I/O 방지)
+_cached_system_instruction: Optional[str] = None
+
+
+def set_cached_system_instruction(instruction: str) -> None:
+    """
+    서버 시작 시(lifespan) 로드한 시스템 프롬프트를 전역 캐시에 등록합니다.
+    """
+    global _cached_system_instruction
+    _cached_system_instruction = instruction
+
 
 class ChatServiceError(Exception):
     """
@@ -59,14 +70,7 @@ def validate_chat_input(session_id: str, message_id: str, message: str) -> str:
             message="유효하지 않은 메시지 ID입니다."
         )
 
-    # 3. message 텍스트 검증
-    if not isinstance(message, str):
-        raise ChatServiceError(
-            http_status=status.HTTP_400_BAD_REQUEST,
-            code="INVALID_REQUEST",
-            message="메시지는 문자열이어야 합니다."
-        )
-
+    # 3. message 길이 검증 (공백 제거 후 1자 이상 MAX_MESSAGE_CHARS자 이하)
     trimmed_message = message.strip()
     if len(trimmed_message) < 1 or len(trimmed_message) > settings.max_message_chars:
         raise ChatServiceError(
@@ -135,8 +139,12 @@ async def prepare_user_message(
 def load_system_instruction() -> str:
     """
     [명세서 2.1 & B3 시스템 프롬프트 로드]
-    backend/prompts/system.md 파일을 읽어 반환합니다.
+    서버 시작 시 캐시된 프롬프트를 반환하며, 캐시가 없는 경우 파일에서 직접 로드합니다.
     """
+    global _cached_system_instruction
+    if _cached_system_instruction:
+        return _cached_system_instruction
+
     prompt_path = settings.system_prompt_path
     if not prompt_path.exists():
         logger.error(f"시스템 프롬프트 파일을 찾을 수 없습니다: {prompt_path}")
@@ -154,6 +162,8 @@ def load_system_instruction() -> str:
             code="INTERNAL",
             message="시스템 프롬프트 설정이 올바르지 않습니다."
         )
+
+    _cached_system_instruction = content
     return content
 
 
@@ -227,6 +237,7 @@ async def call_gemini(
     try:
         from google import genai
         from google.genai import types
+        from google.genai import errors
 
         client = genai.Client(api_key=settings.gemini_api_key)
 
@@ -249,29 +260,24 @@ async def call_gemini(
             code="UPSTREAM_TIMEOUT",
             message="답변을 받지 못했어요."
         )
-    except ChatServiceError:
-        raise
-    except Exception as exc:
-        err_str = str(exc)
-        logger.error(f"Gemini API 호출 중 예외 발생: {err_str}")
-
-        # 할당량 초과 감지 (429 / RESOURCE_EXHAUSTED)
-        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "Quota exceeded" in err_str:
+    except errors.APIError as exc:
+        logger.error(f"Gemini API 오류: {exc.code} {exc}")
+        if exc.code == 429:
             raise ChatServiceError(
                 http_status=status.HTTP_429_TOO_MANY_REQUESTS,
                 code="UPSTREAM_QUOTA",
                 message="요청이 많아요. 잠시 후 다시 시도해 주세요."
             )
-
-        # 안전 필터 차단 감지
-        if "SAFETY" in err_str or "BLOCKED" in err_str or "blocked" in err_str.lower():
-            raise ChatServiceError(
-                http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                code="BLOCKED",
-                message="이 질문에는 답변할 수 없어요."
-            )
-
-        # 그 외 업스트림 서버 오류 (5xx, 연결 실패 등)
+        raise ChatServiceError(
+            http_status=status.HTTP_502_BAD_GATEWAY,
+            code="UPSTREAM_ERROR",
+            message="답변을 받지 못했어요."
+        )
+    except ChatServiceError:
+        raise
+    except Exception as exc:
+        # 네트워크 오류 및 기타 예기치 못한 호출 실패
+        logger.error(f"Gemini 호출 실패: {exc}")
         raise ChatServiceError(
             http_status=status.HTTP_502_BAD_GATEWAY,
             code="UPSTREAM_ERROR",
@@ -284,7 +290,7 @@ async def call_gemini(
         if block_reason:
             logger.warning(f"Gemini 프롬프트 차단 발생: {block_reason}")
             raise ChatServiceError(
-                http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                http_status=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 code="BLOCKED",
                 message="이 질문에는 답변할 수 없어요."
             )
@@ -302,18 +308,26 @@ async def call_gemini(
     finish_reason = getattr(candidate, "finish_reason", None)
     finish_reason_str = str(finish_reason).upper() if finish_reason else ""
 
-    # SAFETY 차단 확인
-    if "SAFETY" in finish_reason_str:
-        logger.warning(f"Gemini 답변 생성 중 안전 필터 차단 (finishReason={finish_reason_str})")
+    # 차단 사유 확장 (SAFETY, PROHIBITED_CONTENT, BLOCKLIST, SPII)
+    BLOCK_REASONS = ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII")
+    if any(r in finish_reason_str for r in BLOCK_REASONS):
+        logger.warning(f"Gemini 답변 생성 중 안전/콘텐츠 필터 차단 (finishReason={finish_reason_str})")
         raise ChatServiceError(
-            http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            http_status=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="BLOCKED",
             message="이 질문에는 답변할 수 없어요."
         )
 
-    # 답변 텍스트 추출 (MAX_TOKENS는 정상으로 취급)
-    text_result = response.text if response.text else ""
-    return text_result
+    # 답변 텍스트 추출 및 빈 답변 검증 (빈 문자열이 done으로 저장되지 않도록 방지)
+    if not response.text or not response.text.strip():
+        logger.error("Gemini 답변 텍스트가 비어 있습니다.")
+        raise ChatServiceError(
+            http_status=status.HTTP_502_BAD_GATEWAY,
+            code="UPSTREAM_ERROR",
+            message="답변을 받지 못했어요."
+        )
+
+    return response.text
 
 
 async def save_ai_message(

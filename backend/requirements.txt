@@ -18,7 +18,7 @@ python-dotenv>=1.0.1
 aiosqlite>=0.20.0
 
 # google-genai: Google 최신 공식 Gemini API SDK (명세서 B3 & S1 지원)
-google-genai>=0.1.0
+google-genai>=1.0.0
 
 # ------------------------------------------------------------------------------
 # 테스트 의존성 (TestClient 및 단위 테스트 실행용)
