@@ -26,7 +26,7 @@ backend/
 │   ├── config.py        # 환경변수 로드 및 설정 (Pydantic Settings)
 │   ├── api/
 │   │   ├── __init__.py
-│   │   ├── chat.py      # 메시지 전송 API (POST /api/chat)
+│   │   ├── chat.py      # 메시지 전송 및 SSE 스트리밍 API (POST /api/chat, POST /api/chat/stream)
 │   │   ├── health.py    # 헬스 체크 엔드포인트 (GET /api/health)
 │   │   └── sessions.py  # 세션별 이력 조회 (GET /api/sessions/{sessionId}/messages)
 │   ├── db/
@@ -41,9 +41,10 @@ backend/
 │   └── system.md        # 시스템 프롬프트 (PR로만 수정)
 ├── tests/
 │   ├── __init__.py
-│   ├── test_chat.py     # Gemini 연동 및 메시지 전송 API 단위 테스트 (6대 조건 검증)
-│   ├── test_health.py   # 헬스 체크 테스트
-│   └── test_messages.py # 저장소 및 이력 조회 API 단위 테스트
+│   ├── test_chat.py        # 단건 메시지 전송 API 단위 테스트
+│   ├── test_chat_stream.py # SSE 스트리밍 엔드포인트 단위 테스트 (4대 조건 검증)
+│   ├── test_health.py      # 헬스 체크 테스트
+│   └── test_messages.py    # 저장소 및 이력 조회 API 단위 테스트
 ├── .dockerignore        # 도커 빌드 제외 설정
 ├── Dockerfile           # 백엔드 컨테이너 빌드 파일
 ├── README.md            # 백엔드 가이드 문서
@@ -182,6 +183,22 @@ curl -X POST http://localhost:8000/api/chat \
 - 동일 세션 동시 요청: HTTP 409 `SESSION_BUSY` (세션별 인메모리 락 제어)
 - Gemini 오류 매핑: 429(`UPSTREAM_QUOTA`), 5xx(`UPSTREAM_ERROR`), 타임아웃(`UPSTREAM_TIMEOUT`), 안전차단(`BLOCKED`)
 
+### 6.4 메시지 스트리밍 전송 API (명세서 6.1 S1~S6)
+사용자 메시지를 전송하고 Gemini의 답변을 SSE(Server-Sent Events) 스트림으로 조각조각 수신합니다.
+```bash
+curl -N -X POST http://localhost:8000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "messageId": "550e8400-e29b-41d4-a716-446655440001",
+    "message": "안녕? 자기소개 부탁해!"
+  }'
+```
+- 이벤트 순서: `start` (`messageId`, `replyTo`) -> `delta` (`text`) ... -> `done` (`messageId`, `finishReason`)
+- 중단 감지: 클라이언트 연결이 끊기면 Gemini 스트림을 즉시 멈추고 받은 데까지 `status='stopped'`로 저장 (받은 텍스트가 없으면 미저장)
+- 도중 오류: `error` (`code`, `message`) 이벤트로 전달되고 AI 메시지는 저장되지 않음
+- 스트림 열기 전 오류: 기존과 동일한 표준 JSON 응답 반환
+
 ---
 
 ## 7. 자동화 테스트 실행 (pytest)
@@ -194,6 +211,12 @@ pytest
 ```
 
 **테스트 항목:**
+- `test_chat_stream.py` (Issue #11 스트리밍 완료 조건 4종 전수 검증):
+  - `test_post_chat_stream_success_flow`: `start -> delta ... -> done` SSE 이벤트 순서 및 DB 저장(`done`) 검증
+  - `test_post_chat_stream_client_disconnected_saves_stopped`: 클라이언트 연결 중단 시 받은 데까지 `stopped` 저장 검증
+  - `test_post_chat_stream_disconnected_with_no_text_saves_nothing`: 텍스트를 받지 못한 상태에서 연결 끊김 시 미저장 검증
+  - `test_post_chat_stream_midstream_error_sends_error_event_and_no_ai_save`: 스트리밍 도중 오류 시 `error` 이벤트 및 미저장 검증
+  - `test_post_chat_stream_pre_stream_error_returns_json`: 스트림 시작 전 오류(400, 409, 429)의 JSON 응답 검증
 - `test_chat.py` (Issue #7 6대 완료 조건 전수 검증):
   - `test_normal_request_returns_200_and_saves_both_messages`: 정상 요청 시 200 응답 및 두 메시지 DB 저장 검증
   - `test_retry_same_message_id_does_not_duplicate_user_message`: 동일 `messageId` 재시도 시 사용자 메시지 중복 저장 방지 검증
