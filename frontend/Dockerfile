@@ -24,7 +24,7 @@ RUN npm run build
 # ------------------------------------------------------------------------------
 # 2단계: 빌드 결과물만 nginx 이미지에 담기 (node와 node_modules는 최종 이미지에 남지 않아요)
 # ------------------------------------------------------------------------------
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
