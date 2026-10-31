@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -19,6 +19,8 @@ async function copyText(text) {
     }
   }
 
+  // 임시 textarea를 선택하면 포커스가 옮겨가니, 복사한 뒤 원래 자리(복사 버튼)로 돌려놔요
+  const previousFocus = document.activeElement
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.setAttribute('readonly', '')
@@ -28,6 +30,7 @@ async function copyText(text) {
   textarea.select()
   const copied = document.execCommand('copy')
   textarea.remove()
+  previousFocus?.focus?.()
 
   if (!copied) throw new Error('복사 실패')
 }
@@ -74,13 +77,18 @@ function CodeBlock({ children }) {
 }
 
 // 답변 속 링크는 새 탭으로 열고, 열린 페이지가 이 창에 접근하지 못하게 해요
+// javascript: 같은 위험한 주소는 react-markdown이 빈 값으로 바꿔서, 그때는 글자로만 보여줘요
 function MarkdownLink({ href, children }) {
+  if (!href) return <span>{children}</span>
+
   return (
     <a href={href} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   )
 }
+
+const remarkPlugins = [remarkGfm]
 
 const components = {
   pre: CodeBlock,
@@ -89,10 +97,12 @@ const components = {
 
 function Markdown({ children }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
       {children}
     </ReactMarkdown>
   )
 }
 
-export default Markdown
+// 입력창에 타이핑할 때마다 App 전체가 다시 그려져요.
+// memo로 감싸서 답변 내용(children)이 바뀔 때만 마크다운을 다시 해석해요.
+export default memo(Markdown)

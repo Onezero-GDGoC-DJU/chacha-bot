@@ -88,6 +88,29 @@ function isNearBottom(element) {
   )
 }
 
+// "오늘"/"어제" 기준 시각. 탭을 열어 둔 채 자정이 지나거나, 다시 탭으로 돌아오면 새로 계산해요
+function useNow() {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const nextMidnight = new Date(now)
+    nextMidnight.setHours(24, 0, 0, 0)
+    const timer = setTimeout(() => setNow(new Date()), nextMidnight - now)
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') setNow(new Date())
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [now])
+
+  return now
+}
+
 function ErrorIcon() {
   return (
     <svg className="msg-error__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -123,6 +146,7 @@ function App() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
+  const now = useNow()
 
   const bodyRef = useRef(null)
   const inputRef = useRef(null)
@@ -170,7 +194,17 @@ function App() {
         userMessage.id,
         userMessage.content,
       )
-      setMessages((current) => [...current, assistantMessage])
+      setMessages((current) => [
+        // 방금 보낸 메시지의 시간은 내 컴퓨터 시계라서, 서버 시계(답변 시간)로 맞춰요.
+        // 두 시계가 어긋나도 질문과 답변 사이에 시간 구분선이 잘못 생기지 않아요.
+        // 이력에서 다시 시도한 메시지는 이미 서버 시간이라 그대로 둬요.
+        ...current.map((message) =>
+          !retryMessage && message.id === userMessage.id
+            ? { ...message, createdAt: assistantMessage.createdAt }
+            : message,
+        ),
+        assistantMessage,
+      ])
     } catch (error) {
       if (error.code === 'ALREADY_ANSWERED') {
         reloadHistory()
@@ -298,7 +332,7 @@ function App() {
               <Fragment key={message.id}>
                 {needsTimeDivider(messages[index - 1], message) && (
                   <div className="time-divider">
-                    {formatDividerTime(message.createdAt)}
+                    {formatDividerTime(message.createdAt, now)}
                   </div>
                 )}
 
@@ -359,6 +393,8 @@ function App() {
             placeholder="메시지를 입력하세요"
             rows={1}
             value={draft}
+            // 제한을 넘은 만큼은 보여주되(남은 글자 수 표시), 아주 큰 붙여 넣기는 막아요
+            maxLength={MAX_MESSAGE_CHARS * 2}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return
@@ -387,7 +423,6 @@ function App() {
               ? 'chat-footer__counter chat-footer__counter--over'
               : 'chat-footer__counter'
           }
-          aria-live="polite"
           hidden={remainingChars > CHAR_COUNTER_THRESHOLD}
         >
           {remainingChars < 0
