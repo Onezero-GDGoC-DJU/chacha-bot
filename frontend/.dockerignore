@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# 의존성과 빌드 결과물 (컨테이너 안에서 npm ci와 npm run build로 새로 만들어요)
+node_modules/
+dist/
+dist-ssr/
+
+# 환경변수 파일 (보안: 빌드 결과물은 누구나 볼 수 있어서 비밀값이 들어가면 안 돼요, 명세서 I3)
+.env
+.env.*
+*.local
+
+# 로그
+*.log
+
+# Docker 설정 파일 자체
+Dockerfile
+.dockerignore
+
+# IDE 및 OS 설정 파일
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
